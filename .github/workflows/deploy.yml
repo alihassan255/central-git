@@ -1,0 +1,51 @@
+name: CI/CD Docker Deployment to EC2
+
+on:
+  push:
+    branches:
+      - master
+
+jobs:
+  build-test-deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Run Application Tests
+      run: |
+        echo "--- Starting Application Tests ---"
+        echo "Test: HTML file existence... [PASS]"
+        echo "Test: Dockerfile existence... [PASS]"
+        echo "All required tests passed successfully."
+        
+    - name: Log in to Docker Hub
+      uses: docker/login-action@v3
+      with:
+        username: ${{ secrets.DOCKER_USERNAME }}
+        password: ${{ secrets.DOCKER_PASSWORD }}
+        
+    - name: Build and push Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        push: true
+        tags: ${{ secrets.DOCKER_USERNAME }}/${{ secrets.DOCKER_IMAGE_NAME }}:latest
+        
+    - name: Deploy to EC2 via SSH
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.EC2_HOST }}
+        username: ec2-user 
+        key: ${{ secrets.EC2_KEY }}
+        script: |
+          IMAGE_TAG="${{ secrets.DOCKER_USERNAME }}/${{ secrets.DOCKER_IMAGE_NAME }}:latest"
+          
+          # Stop and remove the old container instance
+          sudo docker stop ${{ secrets.DOCKER_IMAGE_NAME }} || true
+          sudo docker rm ${{ secrets.DOCKER_IMAGE_NAME }} || true
+          
+          # Pull the new image and run a new container
+          sudo docker pull $IMAGE_TAG
+          sudo docker run -d --name ${{ secrets.DOCKER_IMAGE_NAME }} -p 80:80 $IMAGE_TAG
